@@ -1,9 +1,11 @@
 import electron from 'electron';
 import {some} from 'lodash';
+import {requireTaskPool} from 'electron-remote';
 import {Disposable, CompositeDisposable, SerialDisposable} from 'rx-lite';
-import {getSubstitutionRegExp, getSmartQuotesRegExp, getSmartDashesRegExp,
-  scrubInputString, formatReplacement} from './regular-expressions';
+import {regExpReviver, formatReplacement} from './regular-expressions';
 import {isUndoRedoEvent} from './undo-redo-event';
+
+const createReplacementItems = requireTaskPool(require.resolve('./create-replacement-items'));
 
 const packageName = 'electron-text-substitutions';
 const d = require('debug-electron')(packageName);
@@ -33,7 +35,7 @@ let systemPreferences, replacementItems;
  *
  * @return {Disposable}                   A `Disposable` that will clean up everything this method did
  */
-export default function performTextSubstitution(element, preferenceOverrides = null) {
+export default async function performTextSubstitution(element, preferenceOverrides = null) {
   if (!element || !element.addEventListener) throw new Error(`Element is null or not an EventTarget`);
   if (!process || !process.type === 'renderer') throw new Error(`Not in an Electron renderer context`);
   if (process.platform !== 'darwin') throw new Error(`Only supported on OS X`);
@@ -44,16 +46,16 @@ export default function performTextSubstitution(element, preferenceOverrides = n
     throw new Error(`Electron ${process.versions.electron} is not supported`);
   }
 
-  let currentAttach = assignDisposableToListener(element, preferenceOverrides);
+  let currentAttach = await assignDisposableToListener(element, preferenceOverrides);
   let subscriptionIds = [];
 
   // TODO: It'd be much more efficient to only subscribe these once, rather
   // than for each input element.
   for (let preferenceChangedKey of textPreferenceChangedKeys) {
-    subscriptionIds.push(systemPreferences.subscribeNotification(preferenceChangedKey, () => {
+    subscriptionIds.push(systemPreferences.subscribeNotification(preferenceChangedKey, async function() {
       replacementItems = null;
       d(`User modified ${preferenceChangedKey}, reattaching listener`);
-      assignDisposableToListener(element, preferenceOverrides, currentAttach);
+      await assignDisposableToListener(element, preferenceOverrides, currentAttach);
     }));
   }
 
@@ -73,11 +75,12 @@ export default function performTextSubstitution(element, preferenceOverrides = n
   return combinedDisposable;
 }
 
-function assignDisposableToListener(element, preferenceOverrides, currentAttach = null) {
-  let textPreferences = preferenceOverrides || readSystemTextPreferences();
-  replacementItems = preferenceOverrides ?
-    createReplacementItems(textPreferences) :
-    replacementItems || createReplacementItems(textPreferences);
+async function assignDisposableToListener(element, preferenceOverrides, currentAttach = null) {
+  if (preferenceOverrides) {
+    replacementItems = JSON.parse(await createReplacementItems(preferenceOverrides), regExpReviver);
+  } else if (!replacementItems) {
+    replacementItems = JSON.parse(await createReplacementItems(readSystemTextPreferences()), regExpReviver);
+  }
 
   currentAttach = currentAttach || new SerialDisposable();
   currentAttach.setDisposable(addInputListener(element, replacementItems));
@@ -90,52 +93,6 @@ function readSystemTextPreferences() {
     useSmartQuotes: systemPreferences.getUserDefault(userDefaultsSmartQuotesKey, 'boolean'),
     useSmartDashes: systemPreferences.getUserDefault(userDefaultsSmartDashesKey, 'boolean')
   };
-}
-
-/**
- * @typedef {Object} TextSubstitution
- * @property {String} replace The text to replace
- * @property {String} with    The replacement text
- * @property {Bool}   on      True if this substitution is enabled
- */
-
- /**
-  * Creates a regular expression for each text substitution entry, in addition
-  * to expressions for smart quotes and dashes (if they're enabled).
-  *
-  * @param  {Array<TextSubstitution>} {substitutions  An array of text substitution entries
-  * @param  {Bool} useSmartQuotes                     True if smart quotes is on
-  * @param  {Bool} useSmartDashes}                    True if smart dashes is on
-  * @return {Array<ReplacementItem>}                  An array of replacement items
-  */
-function createReplacementItems({substitutions, useSmartQuotes, useSmartDashes}) {
-  d(`Smart quotes are ${useSmartQuotes ? 'on' : 'off'}`);
-  d(`Smart dashes are ${useSmartDashes ? 'on' : 'off'}`);
-
-  let additionalReplacements = [
-    ...(useSmartQuotes ? getSmartQuotesRegExp() : []),
-    ...(useSmartDashes ? getSmartDashesRegExp() : [])
-  ];
-
-  d(`Found ${substitutions.length} substitutions in NSUserDictionaryReplacementItems`);
-
-  // NB: Run each replacement string through our smart quotes & dashes regex,
-  // so that an input event doesn't cause chained substitutions. Also sort
-  // replacements by length, to handle nested substitutions.
-  let startTime = Date.now();
-  let userDictionaryReplacements = substitutions
-    .filter((substitution) => substitution.on !== false)
-    .sort((a, b) => b.replace.length - a.replace.length)
-    .map((substitution) => getSubstitutionRegExp(substitution.replace,
-      scrubInputString(substitution.with, additionalReplacements)));
-
-  let elapsed = Date.now() - startTime;
-  d(`Spent ${elapsed} ms in createReplacementItems`);
-
-  return [
-    ...userDictionaryReplacements,
-    ...additionalReplacements
-  ];
 }
 
 /**
