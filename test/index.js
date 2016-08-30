@@ -3,13 +3,19 @@ import performTextSubstitution from '../src';
 import MockInput from './mock-input';
 
 describe('the performTextSubstitution method', () => {
-  it('should error when not given an EventTarget', () => {
-    assert.throws(performTextSubstitution);
+  it('should error when not given an EventTarget', async function() {
+    let didThrow = false;
+    try {
+      await performTextSubstitution();
+    } catch (error) {
+      didThrow = true;
+    }
+    assert(didThrow);
   });
 
-  it('should replace text after an input event', () => {
+  it('should replace text after an input event', async function() {
     let input = new MockInput('something, something');
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [{ replace: 'shrug', with: '¯\\_(ツ)_/¯' }]
     });
 
@@ -17,9 +23,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, 'something, something ¯\\_(ツ)_/¯ ');
   });
 
-  it('should stop replacing when unsubscribed', () => {
+  it('should stop replacing when unsubscribed', async function() {
     let input = new MockInput('everything I do deserves… ');
-    let disposable = performTextSubstitution(input, {
+    let disposable = await performTextSubstitution(input, {
       substitutions: [{ replace: 'disapproval', with: 'ಠ_ಠ' }]
     });
 
@@ -31,9 +37,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, 'everything I do deserves… ಠ_ಠ and more disapproval.');
   });
 
-  it('should handle multiple substitutions', () => {
+  it('should handle multiple substitutions', async function() {
     let input = new MockInput('');
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [
         { replace: 'disapproval', with: 'ಠ_ಠ' },
         { replace: 'shrug', with: '¯\\_(ツ)_/¯' }
@@ -47,9 +53,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, 'here is a ¯\\_(ツ)_/¯, and a gaze of ಠ_ಠ.');
   });
 
-  it('should only substitute word preceding the cursor', () => {
+  it('should only substitute word preceding the cursor', async function() {
     let input = new MockInput('');
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [{ replace: 'shrug', with: '¯\\_(ツ)_/¯' }]
     });
 
@@ -57,9 +63,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, 'multiple shrug shrug ¯\\_(ツ)_/¯ ');
   });
 
-  it('should handle the man known as shinypb', () => {
+  it('should handle the man known as shinypb', async function() {
     let input = new MockInput('');
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [
         { replace: "(tm)",  with: "\u2122" },
         { replace: "....",  with: "\u2026" },
@@ -80,9 +86,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, 'Hello © . look here → or there ← ½ is less than ¾ ® … ⅓ ™… ');
   });
 
-  it('should handle the infamous lbo', () => {
+  it('should handle the infamous lbo', async function() {
     let input = new MockInput('');
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [
         { replace: "->", with: "→" },
         { replace: "<-", with: "←" },
@@ -95,9 +101,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, '↵ is ←|, ↳ is |→');
   });
 
-  it('should replace quotes & dashes, if enabled', () => {
+  it('should replace quotes & dashes, if enabled', async function() {
     let input = new MockInput('');
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [],
       useSmartQuotes: true,
       useSmartDashes: true
@@ -107,9 +113,9 @@ describe('the performTextSubstitution method', () => {
     assert.equal(input.value, '‘This is a single quote,’ she said— “And this is a double” ');
   });
 
-  it('should replace quotes & dashes within user dictionary replacements, if enabled', () => {
+  it('should replace quotes & dashes within user dictionary replacements, if enabled', async function() {
     let input = new MockInput('');
-    let disposable = performTextSubstitution(input, {
+    let disposable = await performTextSubstitution(input, {
       substitutions: [{ replace: 'greetings', with: 'Hello-- my name is \'Milo,\' how do you do?' }]
     });
 
@@ -118,7 +124,7 @@ describe('the performTextSubstitution method', () => {
     disposable.dispose();
     input.clearText();
 
-    performTextSubstitution(input, {
+    await performTextSubstitution(input, {
       substitutions: [{ replace: 'greetings', with: 'Hello-- my name is \'Milo,\' how do you do?' }],
       useSmartQuotes: true,
       useSmartDashes: true
